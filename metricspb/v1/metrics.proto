@@ -1,0 +1,32 @@
+// Metrics Sidecar Protobuf
+//
+// Provide GRPC interface for various containers to access the metric publish service.
+// The client containers can invoke this interface to create instances of metrics
+// with unique type, name and labels associated. This is specially useful
+// for multi container pod to expose a single /metrics end point with each container
+// making its own metrics available on /metrics
+
+
+syntax = "proto3";
+
+option go_package = "./;v1";
+
+// Versioning best practices
+// https://docs.microsoft.com/en-us/aspnet/core/grpc/versioning?view=aspnetcore-3.1
+package metricspb.v1;
+
+
+message CreateCounterParams {
+    string  name = 1;
+    repeated string labels=2;
+    string help=3;
+}
+
+message Response {
+    int32   status_code=1;
+    string message=2;
+}
+
+service Metrics {
+    rpc CreateCounter(CreateCounterParams) returns (Response);
+}
