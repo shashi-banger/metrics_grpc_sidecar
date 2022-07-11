@@ -9,17 +9,36 @@
 
 syntax = "proto3";
 
-option go_package = "./;v1";
+option go_package = "./;metricspb_v1";
 
 // Versioning best practices
 // https://docs.microsoft.com/en-us/aspnet/core/grpc/versioning?view=aspnetcore-3.1
-package metricspb.v1;
+//package metricspb.v1;
 
 
 message CreateCounterParams {
     string  name = 1;
     repeated string labels=2;
     string help=3;
+}
+
+message CreateGaugeParams {
+    string  name = 1;
+    repeated string labels=2;
+    string help=3;
+}
+
+message CreateHistogramParams {
+    string  name = 1;
+    repeated string labels=2;
+    string help=3;
+    repeated double buckets=4;
+}
+
+message UpdateParams {
+    string name = 1;
+    map<string, string> label_values = 2;
+    double value=3;
 }
 
 message Response {
@@ -29,4 +48,10 @@ message Response {
 
 service Metrics {
     rpc CreateCounter(CreateCounterParams) returns (Response);
+    rpc CreateGauge(CreateGaugeParams) returns (Response);
+    rpc CreateHistogram(CreateHistogramParams) returns (Response);
+
+    rpc CounterInc(UpdateParams) returns (Response);
+    rpc GaugeSet(UpdateParams) returns (Response); 
+    rpc HistogramObserve(UpdateParams) returns(Response);
 }

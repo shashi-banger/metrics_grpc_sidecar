@@ -3,13 +3,15 @@ package metrics
 import (
 	"fmt"
 	"hash/fnv"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	v1 "github.com/shashi-banger/metrics_grpc_sidecar/metricspb/v1"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	v1 "github.com/shashi-banger/metrics_grpc_sidecar/metricspb/metricspb_v1"
 )
 
 type MetricType string
@@ -21,11 +23,16 @@ var (
 	MetricTypeSummary   = "Summary"
 )
 
+var (
+	ErrorAlreadyExists    = "ErrorAlreadyExists"
+	ErrorUnknownCollector = "ErrorUnknownCollector"
+)
+
 type MetricsContext struct {
-	counterCollectors   map[string]prometheus.Collector
-	gaugeCollectors     map[string]prometheus.Collector
-	histogramCollectors map[string]prometheus.Collector
-	summaryCollectors   map[string]prometheus.Collector
+	counterCollectors   map[string]*prometheus.CounterVec
+	gaugeCollectors     map[string]*prometheus.GaugeVec
+	histogramCollectors map[string]*prometheus.HistogramVec
+	summaryCollectors   map[string]*prometheus.SummaryVec
 }
 
 var (
@@ -59,7 +66,19 @@ type CreateHistogramParams struct {
 func init() {
 	once.Do(func() {
 		metricsContext = &MetricsContext{}
+		metricsContext.counterCollectors = make(map[string]*prometheus.CounterVec)
+		metricsContext.gaugeCollectors = make(map[string]*prometheus.GaugeVec)
+		metricsContext.histogramCollectors = make(map[string]*prometheus.HistogramVec)
+		metricsContext.summaryCollectors = make(map[string]*prometheus.SummaryVec)
 	})
+}
+
+// Following call bloacks and hence should be run as go routine
+func StartMetricsEndpointServer() {
+	fmt.Println("Starting http server")
+	http.Handle("/metrics", promhttp.Handler())
+	http.ListenAndServe(":8080", nil)
+	fmt.Println("Stopping http server")
 }
 
 func create_collector_key_from_list(name string, all_labels []string) string {
@@ -81,7 +100,7 @@ func create_collector_key_from_map(name string, labelValues map[string]string) s
 
 }
 
-func CreateCounter(params v1.CreateCounterParams) error {
+func CreateCounter(params *v1.CreateCounterParams) error {
 	var err error
 	counterCollector := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -90,9 +109,12 @@ func CreateCounter(params v1.CreateCounterParams) error {
 		},
 		params.Labels,
 	)
+
+	prometheus.MustRegister(counterCollector)
+
 	collector_key := create_collector_key_from_list(params.Name, params.Labels)
 	if _, ok := metricsContext.counterCollectors[collector_key]; ok {
-		err = fmt.Errorf("AlreadyExists: ccounter ollector_key %s alreadyExists", collector_key)
+		err = fmt.Errorf("%s: ccounter ollector_key %s alreadyExists", ErrorAlreadyExists, collector_key)
 	} else {
 		metricsContext.counterCollectors[collector_key] = counterCollector
 	}
@@ -104,15 +126,14 @@ func CounterInc(name string, labelValues map[string]string) error {
 	collector_key := create_collector_key_from_map(name, labelValues)
 
 	if val, ok := metricsContext.counterCollectors[collector_key]; ok {
-		val.Inc()
+		val.With(prometheus.Labels(labelValues)).Inc()
 	} else {
-		err = fmt.Errorf("UnknownCollector: counter collector_key %s not registered", collector_key)
+		err = fmt.Errorf("%s: counter collector_key %s not registered", ErrorUnknownCollector, collector_key)
 	}
-	metricsContext.counterCollectors[collector_key].Inc()
 	return err
 }
 
-func CreateGauge(params CreateGaugeParams) error {
+func CreateGauge(params *v1.CreateGaugeParams) error {
 	var err error
 	gaugeCollector := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -121,9 +142,12 @@ func CreateGauge(params CreateGaugeParams) error {
 		},
 		params.Labels,
 	)
+
+	prometheus.MustRegister(gaugeCollector)
+
 	collector_key := create_collector_key_from_list(params.Name, params.Labels)
 	if _, ok := metricsContext.gaugeCollectors[collector_key]; ok {
-		err = fmt.Errorf("AlreadyExists: gauge collector_key %s alreadyExists", collector_key)
+		err = fmt.Errorf("%s: gauge collector_key %s alreadyExists", ErrorAlreadyExists, collector_key)
 	} else {
 		metricsContext.gaugeCollectors[collector_key] = gaugeCollector
 	}
@@ -135,27 +159,27 @@ func GaugeSet(name string, labelValues map[string]string, value float64) error {
 	collector_key := create_collector_key_from_map(name, labelValues)
 
 	if val, ok := metricsContext.gaugeCollectors[collector_key]; ok {
-		val.Inc()
+		val.With(prometheus.Labels(labelValues)).Set(value)
 	} else {
-		err = fmt.Errorf("UnknownCollector: gauge collector_key %s not registered", collector_key)
+		err = fmt.Errorf("%s: gauge collector_key %s not registered", ErrorUnknownCollector, collector_key)
 	}
-	metricsContext.gaugeCollectors[collector_key].Set(value)
 	return err
 }
 
-func CreateHistogram(params CreateHistogramParams) error {
+func CreateHistogram(params *v1.CreateHistogramParams) error {
 	var err error
 	histogramCollector := prometheus.NewHistogramVec(
-		prometheus.GaugeOpts{
+		prometheus.HistogramOpts{
 			Name:    params.Name,
 			Help:    params.Help,
 			Buckets: params.Buckets,
 		},
 		params.Labels,
 	)
+	prometheus.MustRegister(histogramCollector)
 	collector_key := create_collector_key_from_list(params.Name, params.Labels)
 	if _, ok := metricsContext.histogramCollectors[collector_key]; ok {
-		err = fmt.Errorf("AlreadyExists: histogram collector_key %s alreadyExists", collector_key)
+		err = fmt.Errorf("%s: histogram collector_key %s alreadyExists", ErrorAlreadyExists, collector_key)
 	} else {
 		metricsContext.histogramCollectors[collector_key] = histogramCollector
 	}
@@ -167,10 +191,9 @@ func HistogramObserve(name string, labelValues map[string]string, value float64)
 	collector_key := create_collector_key_from_map(name, labelValues)
 
 	if val, ok := metricsContext.histogramCollectors[collector_key]; ok {
-		val.Inc()
+		val.With(prometheus.Labels(labelValues)).Observe(value)
 	} else {
-		err = fmt.Errorf("UnknownCollector: histogram collector_key %s not registered", collector_key)
+		err = fmt.Errorf("%s: histogram collector_key %s not registered", ErrorUnknownCollector, collector_key)
 	}
-	metricsContext.histogramCollectors[collector_key].Observe(value)
 	return err
 }
