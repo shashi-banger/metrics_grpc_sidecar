@@ -13,7 +13,7 @@ endpoint where the metrics can be pulled. This application uses
 
 The above produces to applications `metrics_collector` and `metrics_producer`. 
 
-- `media_collector`: Application with grpc interface which can be used as side car for collecting metrics. It serves a `/metrics` end point where metrics can be fetched or scraped by prometheus server.
+- `metrics_collector`: Application with grpc interface which can be used as side car for collecting metrics. It serves a `/metrics` end point where metrics can be fetched or scraped by prometheus server.
 - `metrics_producer`: An example application making grpc calls to `media_collector` for producing metrics
 
 ## Example run
