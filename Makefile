@@ -1,8 +1,15 @@
 PHONY: all
-all: build_metrics_collector
+all: metrics_collector metrics_producer
 
 
-.PHONY: build_metrics_collector
-build_metrics_collector:
+.PHONY: metrics_collector
+metrics_collector:
 	echo ">> Building metrics_collector"
 	go build -o metrics_collector ./cmd/main.go
+
+metrics_producer:
+	echo ">> Building metrics_producer"
+	go build -o metrics_producer ./examples/metrics_producer.go
+
+clean:
+	rm metrics_collector metrics_producer
